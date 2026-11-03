@@ -2,14 +2,9 @@ package com.siro.nav
 
 import com.siro.nav.billing.NavFareConfig
 import com.siro.nav.billing.NavTripMeter
-import com.siro.nav.engine.CameraTracker
-import com.siro.nav.engine.MapMatcher
-import com.siro.nav.engine.NavigationEngine
-import com.siro.nav.engine.PolylineCodec
-import com.siro.nav.models.NavConfig
-import com.siro.nav.models.NavPoint
-import com.siro.nav.models.NavRoute
-import com.siro.nav.models.SpeedCamera
+import com.siro.nav.billing.NavTripTotals
+import com.siro.nav.engine.*
+import com.siro.nav.models.*
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.Date
@@ -102,5 +97,71 @@ class SiroNavTest {
 
         val events = tracker.checkCameras(currentPosition = pos, cameras = listOf(cam), overspeedToleranceKmh = 5.0)
         assertTrue(events.isNotEmpty())
+    }
+
+    @Test
+    fun testSimulatedTripFlow() {
+        val poly = listOf(
+            NavPoint(latitude = 31.9539, longitude = 35.9106),
+            NavPoint(latitude = 31.9560, longitude = 35.9120),
+            NavPoint(latitude = 31.9580, longitude = 35.9140)
+        )
+        val step1 = NavStep(
+            index = 0,
+            instruction = "اتجه نحو الشمال على شارع زهران",
+            streetName = "شارع زهران",
+            maneuverType = 0,
+            distanceMeters = 400.0,
+            durationSeconds = 30.0,
+            lat = 31.9560,
+            lng = 35.9120
+        )
+        val route = NavRoute(
+            id = "route_amman_sample",
+            routeName = "طريق تجريبي عمان",
+            polyline = poly,
+            steps = listOf(step1),
+            totalDistanceMeters = 800.0,
+            totalDurationSeconds = 60.0
+        )
+
+        val config = NavConfig(apiKey = "live_test_key_123")
+        val engine = NavigationEngine(config)
+        val tripMeter = NavTripMeter(NavFareConfig(baseFare = 0.50, perKilometer = 0.35, perWaitingMinute = 0.05, currency = "JOD"))
+
+        var progressCount = 0
+        var arrived = false
+        var finalTotals: NavTripTotals? = null
+
+        engine.listener = object : NavigationEngineListener {
+            override fun onEvent(event: NavEvent) {
+                when (event) {
+                    is NavEvent.Progress -> progressCount++
+                    is NavEvent.Arrival -> {
+                        arrived = true
+                        finalTotals = tripMeter.totals
+                    }
+                    else -> {}
+                }
+            }
+        }
+
+        assertTrue(engine.startNavigation(route))
+        assertEquals(NavigationStatus.NAVIGATING, engine.status)
+
+        val simulator = NavRouteSimulator(route, speedKmh = 60.0)
+        val fixes = simulator.generateSimulatedFixes(stepIntervalSeconds = 0.5)
+        assertTrue(fixes.size > 2)
+
+        for (fix in fixes) {
+            engine.updateLocation(fix)
+            tripMeter.addFix(fix)
+        }
+
+        assertTrue(progressCount > 0)
+        assertTrue(arrived)
+        assertNotNull(finalTotals)
+        assertTrue(finalTotals!!.distanceKm > 0.4)
+        assertTrue(finalTotals!!.fare > 0.50)
     }
 }
