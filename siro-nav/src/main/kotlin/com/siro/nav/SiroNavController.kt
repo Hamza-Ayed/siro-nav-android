@@ -43,6 +43,8 @@ class SiroNavController(
         private set
     var activeError: String? = null
         private set
+    var tripStartTime: Date? = null
+        private set
 
     val activeRoute: NavRoute?
         get() = engine.activeRoute
@@ -55,6 +57,7 @@ class SiroNavController(
 
     fun startNavigation(route: NavRoute, fare: NavFareConfig? = null): Boolean {
         tripMeter = fare?.let { NavTripMeter(it) }
+        tripStartTime = Date()
         val started = engine.startNavigation(route)
         if (started) {
             isNavigating = true
@@ -74,8 +77,8 @@ class SiroNavController(
         val point = NavPoint(
             latitude = location.latitude,
             longitude = location.longitude,
-            heading = if (location.hasBearing()) location.bearing.toDouble() else 0.0,
-            speedKmh = if (location.hasSpeed()) location.speed * 3.6 else 0.0,
+            heading = if (location.hasBearing()) location.bearing.toDouble() else -1.0,
+            speedKmh = if (location.hasSpeed()) location.speed * 3.6 else -1.0,
             altitude = location.altitude,
             accuracy = if (location.hasAccuracy()) location.accuracy.toDouble() else 5.0,
             timestamp = Date(location.time)
@@ -92,13 +95,7 @@ class SiroNavController(
             is NavEvent.Instruction -> {
                 currentInstruction = event
                 listener?.onInstructionChanged(event)
-                if (event.distanceMeters <= 50.0) {
-                    if (event.maneuverType == 1) voiceEngine.playPrompt("now_turn_right")
-                    else if (event.maneuverType == -1) voiceEngine.playPrompt("now_turn_left")
-                } else if (event.distanceMeters <= 200.0) {
-                    if (event.maneuverType == 1) voiceEngine.playPrompt("after_200m_turn_right")
-                    else if (event.maneuverType == -1) voiceEngine.playPrompt("after_200m_turn_left")
-                }
+                voiceEngine.handleInstruction(event)
             }
             is NavEvent.Progress -> {
                 currentProgress = event

@@ -7,13 +7,11 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.Gravity
-import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.siro.nav.SiroNavController
@@ -23,16 +21,18 @@ import com.siro.nav.engine.NavEvent
 import com.siro.nav.models.NavRoute
 import com.siro.nav.models.SpeedCamera
 import org.json.JSONArray
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * Premium Turn-by-Turn View on Siro Maps.
  * Matches Siro Limestone design:
  * - Real 3D Chase Camera tracking GPS Bearing/Heading
  * - Native Directional Chevron Arrow rotating in real-time with GPS Heading
- * - Floating Elevation Speedometer Badge positioned ergonomically above bottom bar
+ * - Floating Elevated Speedometer Badge positioned clearly above bottom bar
  * - Multi-language support (Arabic / English)
- * - Developer-controlled optional Fare & Distance panel with custom currency
+ * - Developer-controlled optional Fare & Distance panel: [انطلاق الرحلة | المسافة | الأجرة]
  */
 class SiroNavView @JvmOverloads constructor(
     context: Context,
@@ -111,55 +111,33 @@ class SiroNavView @JvmOverloads constructor(
                 <style>
                     html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0F172A; }
                     
-                    /* Modern Vehicle Disc with Precision Directional Chevron */
+                    /* Directional Vehicle Chevron Marker with High-Visibility Halo */
                     .vehicle-container {
-                        width: 48px;
-                        height: 48px;
+                        width: 52px;
+                        height: 52px;
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         position: relative;
                         pointer-events: none;
-                        transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1);
-                    }
-                    .vehicle-halo {
-                        position: absolute;
-                        width: 44px;
-                        height: 44px;
-                        border-radius: 50%;
-                        background: rgba(0, 113, 227, 0.18);
+                        z-index: 9999;
                     }
                     .vehicle-disc {
-                        position: absolute;
-                        width: 34px;
-                        height: 34px;
+                        width: 40px;
+                        height: 40px;
                         background: #FFFFFF;
                         border-radius: 50%;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+                        box-shadow: 0 4px 14px rgba(0,0,0,0.5);
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        border: 2px solid #FFFFFF;
-                    }
-                    .vehicle-chevron {
-                        width: 0;
-                        height: 0;
-                        border-left: 7.5px solid transparent;
-                        border-right: 7.5px solid transparent;
-                        border-bottom: 18px solid #0071E3;
+                        border: 2.5px solid #FFFFFF;
                         position: relative;
-                        top: -2px;
                     }
-                    .vehicle-chevron::after {
-                        content: '';
-                        position: absolute;
-                        left: -7.5px;
-                        top: 12px;
-                        width: 0;
-                        height: 0;
-                        border-left: 7.5px solid transparent;
-                        border-right: 7.5px solid transparent;
-                        border-bottom: 6px solid #FFFFFF;
+                    .vehicle-arrow-svg {
+                        width: 22px;
+                        height: 22px;
+                        display: block;
                     }
                 </style>
             </head>
@@ -202,19 +180,14 @@ class SiroNavView @JvmOverloads constructor(
                             img.src = 'https://map.intaleqapp.com/assets/map_icons/' + icon + '.svg';
                         });
 
-                        // Create Vehicle DOM
+                        // Create Sharp SVG Navigation Arrow
                         vehicleEl = document.createElement('div');
                         vehicleEl.className = 'vehicle-container';
                         
-                        var halo = document.createElement('div');
-                        halo.className = 'vehicle-halo';
                         var disc = document.createElement('div');
                         disc.className = 'vehicle-disc';
-                        var chev = document.createElement('div');
-                        chev.className = 'vehicle-chevron';
+                        disc.innerHTML = '<svg class="vehicle-arrow-svg" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 21L12 17L21 21L12 2Z" fill="#0071E3" stroke="#005bb5" stroke-width="1.5" stroke-linejoin="round"/></svg>';
                         
-                        disc.appendChild(chev);
-                        vehicleEl.appendChild(halo);
                         vehicleEl.appendChild(disc);
 
                         vehicleMarker = new maplibregl.Marker({ element: vehicleEl, rotationAlignment: 'map' })
@@ -231,7 +204,7 @@ class SiroNavView @JvmOverloads constructor(
                             type: 'line',
                             source: 'nav-route-source',
                             layout: { 'line-join': 'round', 'line-cap': 'round' },
-                            paint: { 'line-color': '#FFFFFF', 'line-width': 9.5 }
+                            paint: { 'line-color': '#FFFFFF', 'line-width': 10.0 }
                         });
 
                         map.addLayer({
@@ -239,7 +212,7 @@ class SiroNavView @JvmOverloads constructor(
                             type: 'line',
                             source: 'nav-route-source',
                             layout: { 'line-join': 'round', 'line-cap': 'round' },
-                            paint: { 'line-color': '#0071E3', 'line-width': 6.0 }
+                            paint: { 'line-color': '#0071E3', 'line-width': 6.5 }
                         });
 
                         if (window.siroNavBridge) {
@@ -266,8 +239,8 @@ class SiroNavView @JvmOverloads constructor(
                     function updateVehiclePosition(lat, lng, heading) {
                         if (vehicleMarker) {
                             vehicleMarker.setLngLat([lng, lat]);
-                            if (vehicleEl && heading >= 0) {
-                                vehicleEl.style.transform = 'rotate(' + heading + 'deg)';
+                            if (heading >= 0) {
+                                vehicleMarker.setRotation(heading);
                             }
                         }
                         var targetBearing = heading >= 0 ? heading : map.getBearing();
@@ -276,7 +249,7 @@ class SiroNavView @JvmOverloads constructor(
                             bearing: targetBearing,
                             pitch: 58.0,
                             zoom: 17.8,
-                            duration: 400
+                            duration: 350
                         });
                     }
                 </script>
@@ -319,7 +292,6 @@ class SiroNavView @JvmOverloads constructor(
             }
         }
 
-        // Maneuver Icon Box
         val iconBox = FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#0284C7")) // Sky blue 600
@@ -345,7 +317,7 @@ class SiroNavView @JvmOverloads constructor(
         }
 
         distanceLabel.apply {
-            setTextColor(Color.parseColor("#38BDF8")) // Sky blue accent
+            setTextColor(Color.parseColor("#38BDF8"))
             textSize = 19f
             typeface = Typeface.DEFAULT_BOLD
         }
@@ -371,7 +343,7 @@ class SiroNavView @JvmOverloads constructor(
         topInstructionCard.addView(textDetailsLayout)
         addView(topInstructionCard)
 
-        // ── 2. Speedometer Badge (Elevated & Positioned above bottom bar) ───
+        // ── 2. Speedometer Badge (Highly Elevated: 195dp above bottom) ──────
         speedBadgeContainer.apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -380,13 +352,13 @@ class SiroNavView @JvmOverloads constructor(
                 cornerRadius = 28 * dp
                 setStroke((3.5 * dp).toInt(), Color.parseColor("#EF4444"))
             }
-            elevation = 12 * dp
+            elevation = 14 * dp
             layoutParams = LayoutParams(
                 (56 * dp).toInt(),
                 (56 * dp).toInt()
             ).apply {
-                // Highly elevated margin to ensure zero overlap with bottom card
-                setMargins((18 * dp).toInt(), 0, 0, (148 * dp).toInt())
+                // Generous vertical clearance from bottom card
+                setMargins((18 * dp).toInt(), 0, 0, (195 * dp).toInt())
                 gravity = Gravity.BOTTOM or Gravity.START
             }
         }
@@ -436,7 +408,6 @@ class SiroNavView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
-        // Stop / Exit circular button
         exitButton.apply {
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#334155"))
@@ -470,7 +441,7 @@ class SiroNavView @JvmOverloads constructor(
         }
 
         etaLabel.apply {
-            setTextColor(Color.parseColor("#10B981")) // Emerald Green
+            setTextColor(Color.parseColor("#10B981"))
             textSize = 21f
             typeface = Typeface.DEFAULT_BOLD
         }
@@ -496,7 +467,7 @@ class SiroNavView @JvmOverloads constructor(
         topRow.addView(etaColumn)
         bottomCard.addView(topRow)
 
-        // ── 4. Developer Configured Fare & Distance Sub-Panel ────────────────
+        // ── 4. Developer Configured Metrics: [انطلاق الرحلة | المسافة | الأجرة]
         fareMetricsContainer.apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -602,14 +573,17 @@ class SiroNavView @JvmOverloads constructor(
                 progress.snappedPosition.heading
             )
 
-            // Dynamic Developer Tariff Metrics
+            // Dynamic Developer Tariff Metrics: [انطلاق الرحلة | المسافة | الأجرة]
             if (showFareMetrics) {
                 activeController?.lastTripTotals?.let { totals ->
                     fareMetricsContainer.visibility = VISIBLE
+                    val startFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+                    val startTimeStr = activeController?.tripStartTime?.let { startFormat.format(it) } ?: "--:--"
+
                     fareMetricsLabel.text = if (locale == "ar") {
-                        "الأجرة: ${totals.fareLabel}  •  المسافة: ${String.format("%.2f", totals.distanceKm)} كم  •  انتظار: ${String.format("%.1f", totals.waitingMinutes)} د"
+                        "انطلاق: $startTimeStr  •  المسافة: ${String.format("%.2f", totals.distanceKm)} كم  •  الأجرة: ${totals.fareLabel}"
                     } else {
-                        "Fare: ${totals.fareLabel}  •  Distance: ${String.format("%.2f", totals.distanceKm)} km  •  Waiting: ${String.format("%.1f", totals.waitingMinutes)} m"
+                        "Start: $startTimeStr  •  Distance: ${String.format("%.2f", totals.distanceKm)} km  •  Fare: ${totals.fareLabel}"
                     }
                 }
             } else {
