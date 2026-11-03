@@ -11,7 +11,6 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -20,16 +19,14 @@ import com.siro.nav.SiroNavController
 import com.siro.nav.SiroNavListener
 import com.siro.nav.billing.NavTripTotals
 import com.siro.nav.engine.NavEvent
-import com.siro.nav.models.NavPoint
 import com.siro.nav.models.NavRoute
 import com.siro.nav.models.SpeedCamera
 import org.json.JSONArray
-import org.json.JSONObject
 
 /**
- * Full-screen Turn-by-Turn Navigation View for Android.
- * Renders the Siro vector map, the active route polyline, a dynamic 3D follow camera,
- * the rotating navigation arrow marker, and the turn-by-turn guidance HUD.
+ * Native Turn-by-Turn View on Siro Maps.
+ * Includes Limestone style, RTL Arabic text engine, runtime badge icons,
+ * 3D follow camera, vehicle rotation, and live tariff metrics HUD.
  */
 class SiroNavView @JvmOverloads constructor(
     context: Context,
@@ -47,6 +44,7 @@ class SiroNavView @JvmOverloads constructor(
     private val speedLabel = TextView(context)
     private val bottomStatusBar = LinearLayout(context)
     private val remainingLabel = TextView(context)
+    private val fareMetricsLabel = TextView(context)
     private val exitButton = Button(context)
 
     var onExitListener: (() -> Unit)? = null
@@ -85,54 +83,73 @@ class SiroNavView @JvmOverloads constructor(
     private fun loadMapHtml() {
         val html = """
             <!DOCTYPE html>
-            <html>
+            <html dir="rtl">
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-                <title>Siro Nav Map</title>
+                <title>Siro Limestone Navigation</title>
                 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
                 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
                 <style>
                     html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #101014; }
-                    .vehicle-arrow-container {
-                        width: 44px;
-                        height: 44px;
+                    .vehicle-marker-wrapper {
+                        width: 52px;
+                        height: 52px;
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        transition: transform 0.2s linear;
                     }
-                    .vehicle-arrow {
-                        width: 0;
-                        height: 0;
-                        border-left: 12px solid transparent;
-                        border-right: 12px solid transparent;
-                        border-bottom: 28px solid #0071E3;
-                        filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+                    .vehicle-disc {
+                        width: 44px;
+                        height: 44px;
+                        background: #FFFFFF;
+                        border-radius: 50%;
+                        box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
                         position: relative;
                     }
-                    .vehicle-arrow::after {
-                        content: '';
-                        position: absolute;
-                        top: 4px;
-                        left: -8px;
+                    .vehicle-chevron {
                         width: 0;
                         height: 0;
-                        border-left: 8px solid transparent;
-                        border-right: 8px solid transparent;
-                        border-bottom: 20px solid #FFFFFF;
+                        border-left: 9px solid transparent;
+                        border-right: 9px solid transparent;
+                        border-bottom: 22px solid #0071E3;
+                        position: relative;
+                        top: -3px;
+                    }
+                    .vehicle-chevron::after {
+                        content: '';
+                        position: absolute;
+                        left: -9px;
+                        top: 14px;
+                        width: 0;
+                        height: 0;
+                        border-left: 9px solid transparent;
+                        border-right: 9px solid transparent;
+                        border-bottom: 8px solid #FFFFFF;
                     }
                 </style>
             </head>
             <body>
                 <div id="map"></div>
                 <script>
+                    // Mandatory RTL Text Plugin for correct Arabic shaping and ligatures
+                    if (maplibregl.getRTLTextPluginStatus() === 'unavailable') {
+                        maplibregl.setRTLTextPlugin(
+                            'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js',
+                            null,
+                            true
+                        );
+                    }
+
                     var map = new maplibregl.Map({
                         container: 'map',
                         style: '$styleUrl',
                         center: [35.9106, 31.9539],
                         zoom: 17.5,
-                        pitch: 60.0,
+                        pitch: 55.0,
                         bearing: 0,
                         attributionControl: false
                     });
@@ -141,12 +158,30 @@ class SiroNavView @JvmOverloads constructor(
                     var vehicleEl = null;
 
                     map.on('load', function() {
-                        // Vehicle Marker Setup
+                        // Load SVG POI badges into map style
+                        var icons = [
+                            'badge-cafe', 'badge-restaurant', 'badge-fuel', 'badge-hospital',
+                            'badge-pharmacy', 'badge-bank', 'badge-supermarket', 'arrow'
+                        ];
+                        icons.forEach(function(icon) {
+                            var img = new Image(24, 24);
+                            img.onload = function() {
+                                if (!map.hasImage(icon)) {
+                                    map.addImage(icon, img);
+                                }
+                            };
+                            img.src = 'https://map.intaleqapp.com/assets/map_icons/' + icon + '.svg';
+                        });
+
+                        // Create Vehicle Chevron Marker matching Flutter NavVehicleIcon
                         vehicleEl = document.createElement('div');
-                        vehicleEl.className = 'vehicle-arrow-container';
-                        var arrow = document.createElement('div');
-                        arrow.className = 'vehicle-arrow';
-                        vehicleEl.appendChild(arrow);
+                        vehicleEl.className = 'vehicle-marker-wrapper';
+                        var disc = document.createElement('div');
+                        disc.className = 'vehicle-disc';
+                        var chev = document.createElement('div');
+                        chev.className = 'vehicle-chevron';
+                        disc.appendChild(chev);
+                        vehicleEl.appendChild(disc);
 
                         vehicleMarker = new maplibregl.Marker({ element: vehicleEl, rotationAlignment: 'map' })
                             .setLngLat([35.9106, 31.9539])
@@ -158,22 +193,20 @@ class SiroNavView @JvmOverloads constructor(
                             data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } }
                         });
 
-                        // Casing layer
                         map.addLayer({
                             id: 'nav-route-casing',
                             type: 'line',
                             source: 'nav-route-source',
                             layout: { 'line-join': 'round', 'line-cap': 'round' },
-                            paint: { 'line-color': '#FFFFFF', 'line-width': 9 }
+                            paint: { 'line-color': '#FFFFFF', 'line-width': 10 }
                         });
 
-                        // Main route line
                         map.addLayer({
                             id: 'nav-route-line',
                             type: 'line',
                             source: 'nav-route-source',
                             layout: { 'line-join': 'round', 'line-cap': 'round' },
-                            paint: { 'line-color': '#0071E3', 'line-width': 6 }
+                            paint: { 'line-color': '#0071E3', 'line-width': 6.5 }
                         });
 
                         if (window.siroNavBridge) {
@@ -200,16 +233,17 @@ class SiroNavView @JvmOverloads constructor(
                     function updateVehiclePosition(lat, lng, heading) {
                         if (vehicleMarker) {
                             vehicleMarker.setLngLat([lng, lat]);
-                            if (vehicleEl) {
+                            if (vehicleEl && heading >= 0) {
                                 vehicleEl.style.transform = 'rotate(' + heading + 'deg)';
                             }
                         }
+                        var targetBearing = heading >= 0 ? heading : map.getBearing();
                         map.easeTo({
                             center: [lng, lat],
-                            bearing: heading,
-                            pitch: 60,
+                            bearing: targetBearing,
+                            pitch: 55,
                             zoom: 17.5,
-                            duration: 700
+                            duration: 500
                         });
                     }
                 </script>
@@ -279,7 +313,7 @@ class SiroNavView @JvmOverloads constructor(
                 (48 * dp).toInt(),
                 (48 * dp).toInt()
             ).apply {
-                setMargins((16 * dp).toInt(), 0, 0, (88 * dp).toInt())
+                setMargins((16 * dp).toInt(), 0, 0, (96 * dp).toInt())
                 gravity = Gravity.BOTTOM or Gravity.START
             }
         }
@@ -294,22 +328,27 @@ class SiroNavView @JvmOverloads constructor(
         speedBadge.addView(speedLabel)
         addView(speedBadge)
 
-        // 3. Bottom Status Bar
+        // 3. Bottom Status Bar with Fare & Distance
         bottomStatusBar.apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((16 * dp).toInt(), 0, (16 * dp).toInt(), 0)
+            orientation = LinearLayout.VERTICAL
+            setPadding((16 * dp).toInt(), (8 * dp).toInt(), (16 * dp).toInt(), (8 * dp).toInt())
             background = GradientDrawable().apply {
                 setColor(Color.argb(240, 30, 30, 30))
                 cornerRadius = 20 * dp
             }
             layoutParams = LayoutParams(
                 LayoutParams.MATCH_PARENT,
-                (64 * dp).toInt()
+                LayoutParams.WRAP_CONTENT
             ).apply {
                 setMargins((12 * dp).toInt(), 0, (12 * dp).toInt(), (16 * dp).toInt())
                 gravity = Gravity.BOTTOM
             }
+        }
+
+        val row1 = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (44 * dp).toInt())
         }
 
         remainingLabel.apply {
@@ -327,11 +366,22 @@ class SiroNavView @JvmOverloads constructor(
                 cornerRadius = 12 * dp
             }
             setOnClickListener { onExitListener?.invoke() }
-            layoutParams = LinearLayout.LayoutParams((72 * dp).toInt(), (38 * dp).toInt())
+            layoutParams = LinearLayout.LayoutParams((72 * dp).toInt(), (36 * dp).toInt())
         }
 
-        bottomStatusBar.addView(remainingLabel)
-        bottomStatusBar.addView(exitButton)
+        row1.addView(remainingLabel)
+        row1.addView(exitButton)
+
+        fareMetricsLabel.apply {
+            setTextColor(Color.parseColor("#FBBF24"))
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            visibility = GONE
+            setPadding(0, 0, 0, (4 * dp).toInt())
+        }
+
+        bottomStatusBar.addView(row1)
+        bottomStatusBar.addView(fareMetricsLabel)
         addView(bottomStatusBar)
     }
 
@@ -370,7 +420,19 @@ class SiroNavView @JvmOverloads constructor(
             val km = String.format("%.1f كم", progress.remainingDistanceMeters / 1000.0)
             val mins = "${progress.remainingDurationSeconds / 60} دقيقة"
             remainingLabel.text = "$km • $mins"
-            updateVehicle(progress.snappedPosition.latitude, progress.snappedPosition.longitude, progress.snappedPosition.heading)
+
+            // Update Vehicle Arrow with Heading
+            updateVehicle(
+                progress.snappedPosition.latitude,
+                progress.snappedPosition.longitude,
+                progress.snappedPosition.heading
+            )
+
+            // Update Fare Metrics if meter is active
+            activeController?.lastTripTotals?.let { totals ->
+                fareMetricsLabel.visibility = VISIBLE
+                fareMetricsLabel.text = "الأجرة: ${totals.fareLabel}  |  المقطوع: ${String.format("%.2f", totals.distanceKm)} كم  |  انتظار: ${String.format("%.1f", totals.waitingMinutes)} د"
+            }
         }
     }
 
