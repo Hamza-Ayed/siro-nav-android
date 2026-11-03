@@ -12,7 +12,6 @@ import com.siro.nav.billing.NavFareConfig
 import com.siro.nav.billing.NavTripTotals
 import com.siro.nav.engine.NavEvent
 import com.siro.nav.engine.NavRouteSimulator
-import com.siro.nav.engine.PolylineCodec
 import com.siro.nav.models.NavConfig
 import com.siro.nav.models.NavPoint
 import com.siro.nav.models.NavRoute
@@ -23,7 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class MainActivity : AppCompatActivity(), SiroNavListener {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var navController: SiroNavController
     private lateinit var navView: SiroNavView
@@ -46,7 +45,7 @@ class MainActivity : AppCompatActivity(), SiroNavListener {
             baseUrl = "https://map-saas.intaleqapp.com/api"
         )
         navController = SiroNavController(context = this, config = config)
-        navController.listener = this
+        navView.bindController(navController)
 
         navView.onExitListener = {
             stopNavigation()
@@ -61,13 +60,13 @@ class MainActivity : AppCompatActivity(), SiroNavListener {
         controlPanel.visibility = View.GONE
         navView.visibility = View.VISIBLE
 
-        // Route: Amman Zahran Street to 5th Circle
+        // Realistic Route: Amman Zahran Street (3rd to 5th Circle)
         val polyline = listOf(
             NavPoint(latitude = 31.9539, longitude = 35.9106),
-            NavPoint(latitude = 31.9560, longitude = 35.9080),
-            NavPoint(latitude = 31.9585, longitude = 35.9040),
-            NavPoint(latitude = 31.9610, longitude = 35.9000),
-            NavPoint(latitude = 31.9635, longitude = 35.8950),
+            NavPoint(latitude = 31.9555, longitude = 35.9075),
+            NavPoint(latitude = 31.9575, longitude = 35.9035),
+            NavPoint(latitude = 31.9600, longitude = 35.8995),
+            NavPoint(latitude = 31.9625, longitude = 35.8950),
             NavPoint(latitude = 31.9650, longitude = 35.8900)
         )
 
@@ -79,8 +78,8 @@ class MainActivity : AppCompatActivity(), SiroNavListener {
                 maneuverType = 0,
                 distanceMeters = 800.0,
                 durationSeconds = 60.0,
-                lat = 31.9585,
-                lng = 35.9040
+                lat = 31.9575,
+                lng = 35.9035
             ),
             NavStep(
                 index = 1,
@@ -97,8 +96,8 @@ class MainActivity : AppCompatActivity(), SiroNavListener {
         val camera = SpeedCamera(
             id = "cam_zahran_1",
             speedLimitKmh = 60.0,
-            lat = 31.9585,
-            lng = 35.9040
+            lat = 31.9575,
+            lng = 35.9035
         )
 
         val route = NavRoute(
@@ -119,10 +118,11 @@ class MainActivity : AppCompatActivity(), SiroNavListener {
         )
 
         navController.startNavigation(route = route, fare = fare)
+        navView.setRoute(route)
 
-        // Drive the simulator
-        val simulator = NavRouteSimulator(route, speedKmh = 50.0)
-        val fixes = simulator.generateSimulatedFixes(stepIntervalSeconds = 0.8)
+        // Drive the simulator smoothly along the route
+        val simulator = NavRouteSimulator(route, speedKmh = 45.0)
+        val fixes = simulator.generateSimulatedFixes(stepIntervalSeconds = 0.5)
 
         simJob = lifecycleScope.launch {
             for (fix in fixes) {
@@ -137,7 +137,7 @@ class MainActivity : AppCompatActivity(), SiroNavListener {
                     time = System.currentTimeMillis()
                 }
                 navController.updateLocation(loc)
-                delay(800)
+                delay(500)
             }
         }
     }
@@ -149,34 +149,10 @@ class MainActivity : AppCompatActivity(), SiroNavListener {
         controlPanel.visibility = View.VISIBLE
     }
 
-    override fun onInstructionChanged(instruction: NavEvent.Instruction) {
-        navView.updateInstruction(instruction)
-    }
-
-    override fun onProgressUpdated(progress: NavEvent.Progress) {
-        navView.updateProgress(progress)
-    }
-
-    override fun onSpeedExceeded(currentSpeed: Double, speedLimit: Double) {
-        Toast.makeText(this, "تجاوز السرعة: ${currentSpeed.toInt()} / ${speedLimit.toInt()} كم/س", Toast.LENGTH_SHORT).show()
-    }
-
-    override fun onCameraApproaching(camera: SpeedCamera, distance: Double) {
-        Toast.makeText(this, "رادار سرعة بعد ${distance.toInt()} م", Toast.LENGTH_SHORT).show()
-    }
-
-    override fun onTripArrived(totals: NavTripTotals) {
-        Toast.makeText(this, "تم الوصول! الأجرة: ${totals.fareLabel}", Toast.LENGTH_LONG).show()
-        stopNavigation()
-    }
-
-    override fun onError(error: String) {
-        Toast.makeText(this, error, Toast.LENGTH_LONG).show()
-    }
-
     override fun onDestroy() {
         super.onDestroy()
         simJob?.cancel()
         navController.stopNavigation()
+        navView.onDestroy()
     }
 }

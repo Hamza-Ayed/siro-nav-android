@@ -44,6 +44,9 @@ class SiroNavController(
     var activeError: String? = null
         private set
 
+    val activeRoute: NavRoute?
+        get() = engine.activeRoute
+
     private var tripMeter: NavTripMeter? = null
 
     init {
