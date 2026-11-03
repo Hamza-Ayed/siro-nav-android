@@ -1,30 +1,36 @@
 # Siro Nav for Android (Kotlin)
-### نظام الملاحة التوجيهية الحية لمنصة خرائط سيرو لنظام أندرويد (كوتلن)
+### حزمة الملاحة التوجيهية الحية لنظام أندرويد (Native Kotlin • SDK 21+)
 
 [![JitPack](https://jitpack.io/v/Hamza-Ayed/siro-nav-android.svg)](https://jitpack.io/#Hamza-Ayed/siro-nav-android)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Kotlin](https://img.shields.io/badge/Kotlin-1.9.23-orange.svg)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9%2B-orange.svg)](https://kotlinlang.org)
 [![Android](https://img.shields.io/badge/Android-SDK%2021%2B-green.svg)](https://developer.android.com)
+[![Maps](https://img.shields.io/badge/Maps-Siro%20Limestone%20Vector-purple.svg)](https://map.intaleqapp.com)
 
-In-app turn-by-turn navigation on **Siro Maps**, engineered for ride-hailing and delivery apps. The driver never leaves your app: the route, map matching, Arabic voice guidance, and trip meter all run smoothly natively in Kotlin.
-
----
-
-## 🚀 Key Features / المميزات الرئيسية
-
-1. **Sub-second Map Matching**: High-performance forward-window map snapping onto route polyline with continuous off-route deviation tracking and auto-rerouting.
-2. **Offline Bundled Arabic Voice Engine**: 93 pre-baked studio audio prompts in Arabic (`ar`) covering turns, distance alerts, speed limits, fixed speed cameras, and ride phases.
-3. **Trip Meter & Tariff Engine**: Built-in meter for distance (in km) and waiting minutes (below speed threshold), auto-calculating fare with custom tariffs (JOD/SAR/USD).
-4. **Speed Camera & Radar Warnings**: Lookahead detection (500m / 300m) for fixed and mobile radars with overspeed tolerance enforcement.
-5. **Drop-in UI Component (`SiroNavView`)**: Native Android ViewGroup overlay with maneuver banners, distance counters, dynamic speed badge, and ride controls.
-6. **Commercial API Licensing**: Enterprise API key gated licensing with automatic telemetry probe collector for fleet intelligence.
+حزمة ملاحة أصلية عالية الأداء مبنية بلغة **Kotlin** لنظام أندرويد، مخصصة لتطبيقات النقل والتوصيل (Ride-Hailing & Logistics). تمنح السائق تجربة ملاحة متكاملة على نمط خرائط سيرو (Siro Limestone 3D) مع الصوت العربي المسجل استوديو، التوجيه الذكي للدواوير والمخارج، واحتساب الأجرة لحظياً بالعملة المحددة.
 
 ---
 
-## 📦 Installation / التثبيت
+## 📸 معاينة حية للمحرك (Live Visuals)
 
-### 1. Add Repository
-In your `settings.gradle.kts` (or root `build.gradle.kts`):
+<div align="center">
+  <img src="docs/media/screen_android_roundabout_polyline.png" width="370" alt="Siro Nav Android Roundabout Polyline" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/media/screen_android_fare_hud.png" width="370" alt="Siro Nav Android Fare Progression HUD" />
+</div>
+
+- **خط المسار الأزرق الملاحي (Blue Route Polyline)**: مع إطار أبيض عالي التباين بسماكة 12px يلتف بانسيابية حول الدواوير والتقاطعات.
+- **توجيه الدواوير الصوتي الذكي**: استخراج رقم المخرج ونطقه بالصوت الاستوديو العربي (`عند الدوار، اسلك المخرج السادس إلى شارع الكلية العلمية الإسلامية`).
+- **ماركر السائق وسهم التوجيه**: قرص دائري أبيض بظل ثلاثي الأبعاد مع رأس سهم ملاحة أزرق يتجه فورياً مع زاوية الـ Heading.
+- **لوحة الأجرة التراكمية المباشرة**: احتساب فتحة العداد، الكيلومترات، ودقائق الانتظار عند التوقف أو السرعة البطيئة.
+- **عداد السرعة المرتفع**: شارة دائرية بارزة واضحة للسائق أثناء القيادة مع حلقة حمراء تحذيرية.
+
+---
+
+## 📦 التثبيت (Installation)
+
+### ١. إضافة مستودع JitPack
+في ملف `settings.gradle.kts` (أو `root build.gradle.kts`):
 
 ```kotlin
 dependencyResolutionManagement {
@@ -36,8 +42,8 @@ dependencyResolutionManagement {
 }
 ```
 
-### 2. Add Dependency
-In your app module `build.gradle.kts`:
+### ٢. إضافة الاعتمادية
+في ملف `build.gradle.kts` (Module: `app`):
 
 ```kotlin
 dependencies {
@@ -47,9 +53,9 @@ dependencies {
 
 ---
 
-## 🛠️ Quick Start / دليل البدء السريع
+## ⚡ البدء السريع في ٥ أسطر (Quick Start)
 
-### 1. Initialize Controller with API Key & Fare Rules
+### ١. إعداد المتحكم وتحديد تسعيرة الرحلة للمطور (Fare Config)
 
 ```kotlin
 import com.siro.nav.SiroNavController
@@ -62,33 +68,20 @@ val config = NavConfig(
 )
 val navController = SiroNavController(context = this, config = config)
 
-// Start Navigation with Ride Fare Config
+// خيارات التسعير والفوترة للمطور
 val fareConfig = NavFareConfig(
-    baseFare = 0.50,
-    perKilometer = 0.35,
-    perWaitingMinute = 0.05,
-    currency = "JOD"
+    baseFare = 0.50,            // فتحة العداد المبدئية
+    perKilometer = 0.35,        // سعر الكيلومتر
+    perWaitingMinute = 0.05,    // سعر دقيقة الانتظار (عند سرعة < 5 كم/س)
+    currency = "JOD",           // العملة: JOD, SAR, AED, USD
+    waitingSpeedKmh = 5.0
 )
 
-val started = navController.startNavigation(route = activeRoute, fare = fareConfig)
-if (!started) {
-    println("Navigation start failed: ${navController.activeError}")
-}
+// بدء الملاحة
+navController.startNavigation(route = activeRoute, fare = fareConfig)
 ```
 
-### 2. Feed GPS Fixes (e.g. from FusedLocationProviderClient)
-
-```kotlin
-locationCallback = object : LocationCallback() {
-    override fun onLocationResult(result: LocationResult) {
-        result.lastLocation?.let { location ->
-            navController.updateLocation(location)
-        }
-    }
-}
-```
-
-### 3. Drop-in HUD View in Activity / Fragment XML
+### ٢. إضافة واجهة الملاحة في ملف التصميم XML
 
 ```xml
 <com.siro.nav.view.SiroNavView
@@ -97,8 +90,11 @@ locationCallback = object : LocationCallback() {
     android:layout_height="match_parent" />
 ```
 
+### ٣. ربط الأحداث وتحديث الموقع من الـ GPS
+
 ```kotlin
 val navView = findViewById<SiroNavView>(R.id.siroNavView)
+navView.showFareMetrics = true
 
 navController.listener = object : SiroNavListener {
     override fun onInstructionChanged(instruction: NavEvent.Instruction) {
@@ -110,7 +106,8 @@ navController.listener = object : SiroNavListener {
     }
 
     override fun onTripArrived(totals: NavTripTotals) {
-        println("Trip arrived! Fare: ${totals.fareLabel}")
+        println("وصلت الرحلة! الأجرة الإجمالية: ${totals.fareLabel}")
+        println("إجمالي المسافة: ${totals.totalDistanceKm} كم")
     }
 
     override fun onSpeedExceeded(currentSpeed: Double, speedLimit: Double) {}
@@ -118,21 +115,21 @@ navController.listener = object : SiroNavListener {
     override fun onError(error: String) {}
 }
 
-navView.onExitListener = {
-    navController.stopNavigation()
+// تغذية الموقع من نظام GPS
+fun onLocationReceived(location: Location) {
+    navController.updateLocation(location)
 }
 ```
 
 ---
 
-## 🧪 Testing
+## 🧪 تشغيل الاختبارات الآلية (Unit Tests)
 
-Run test suite:
 ```bash
 ./gradlew :siro-nav:testReleaseUnitTest
 ```
 
 ---
 
-## 📄 License
+## 📄 الترخيص (License)
 MIT License. © 2026 Siro Platform & Hamza Ayed.
