@@ -92,20 +92,43 @@ class RoutingClient(val config: NavConfig) {
             for (i in 0 until legSteps.length()) {
                 val st = legSteps.getJSONObject(i)
                 val maneuver = st.getJSONObject("maneuver")
-                val loc = maneuver.getJSONArray("location")
+                val mType = maneuver.optString("type", "")
                 val modifier = maneuver.optString("modifier", "")
-                val sign = when (modifier) {
-                    "right", "slight right", "sharp right" -> 1
-                    "left", "slight left", "sharp left" -> -1
-                    "uturn" -> -98
+                val loc = maneuver.getJSONArray("location")
+                val exitNumber = if (maneuver.has("exit")) maneuver.optInt("exit") else null
+                val street = st.optString("name", "")
+
+                val isRoundabout = mType == "roundabout" || mType == "rotary" || modifier.contains("roundabout")
+                val sign = when {
+                    isRoundabout -> 6
+                    modifier == "uturn" -> -98
+                    modifier in listOf("right", "slight right", "sharp right") -> 1
+                    modifier in listOf("left", "slight left", "sharp left") -> -1
                     else -> 0
                 }
-                val street = st.optString("name", "")
-                val instText = when (sign) {
-                    1 -> if (street.isNotEmpty()) "انعطف يميناً إلى $street" else "انعطف يميناً"
-                    -1 -> if (street.isNotEmpty()) "انعطف يساراً إلى $street" else "انعطف يساراً"
-                    -98 -> "قم بالدوران للخلف"
-                    else -> if (street.isNotEmpty()) "تابع السير على $street" else "تابع السير على الطريق"
+
+                val instText = if (isRoundabout) {
+                    val exitNameAr = when (exitNumber) {
+                        1 -> "المخرج الأول"
+                        2 -> "المخرج الثاني"
+                        3 -> "المخرج الثالث"
+                        4 -> "المخرج الرابع"
+                        5 -> "المخرج الخامس"
+                        6 -> "المخرج السادس"
+                        else -> if (exitNumber != null) "المخرج رقم $exitNumber" else "المخرج المناسب"
+                    }
+                    if (street.isNotEmpty()) {
+                        "عند الدوار، اسلك $exitNameAr إلى $street"
+                    } else {
+                        "عند الدوار، اسلك $exitNameAr"
+                    }
+                } else {
+                    when (sign) {
+                        1 -> if (street.isNotEmpty()) "انعطف يميناً إلى $street" else "انعطف يميناً"
+                        -1 -> if (street.isNotEmpty()) "انعطف يساراً إلى $street" else "انعطف يساراً"
+                        -98 -> "قم بالدوران للخلف"
+                        else -> if (street.isNotEmpty()) "تابع السير على $street" else "تابع السير على الطريق"
+                    }
                 }
 
                 steps.add(
@@ -114,6 +137,7 @@ class RoutingClient(val config: NavConfig) {
                         instruction = instText,
                         streetName = street,
                         maneuverType = sign,
+                        exitNumber = exitNumber,
                         distanceMeters = st.optDouble("distance", 0.0),
                         durationSeconds = st.optDouble("duration", 0.0),
                         lat = loc.getDouble(1),

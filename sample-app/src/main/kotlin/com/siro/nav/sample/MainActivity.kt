@@ -87,8 +87,10 @@ class MainActivity : AppCompatActivity() {
                 // Smooth simulation driving with heading
                 val simulator = NavRouteSimulator(liveRoute, speedKmh = 45.0)
                 val fixes = simulator.generateSimulatedFixes(stepIntervalSeconds = 0.35)
+                android.util.Log.d("SIM_DEBUG", "Generated fixes count: " + fixes.size)
 
-                simJob = launch {
+                simJob = lifecycleScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                    android.util.Log.d("SIM_DEBUG", "Starting simulation coroutine...")
                     for (fix in fixes) {
                         if (!navController.isNavigating) break
                         val loc = android.location.Location("siro_road_gps").apply {
@@ -100,7 +102,8 @@ class MainActivity : AppCompatActivity() {
                             accuracy = 3.0f
                             time = System.currentTimeMillis()
                         }
-                        navController.updateLocation(loc)
+                        android.util.Log.d("SIM_DEBUG", "Feeding loc: " + loc.latitude + ", " + loc.longitude + " bearing=" + loc.bearing)
+                        runOnUiThread { navController.updateLocation(loc) }
                         delay(350)
                     }
                 }

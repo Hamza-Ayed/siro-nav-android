@@ -112,32 +112,17 @@ class SiroNavView @JvmOverloads constructor(
                     html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0F172A; }
                     
                     /* Directional Vehicle Chevron Marker with High-Visibility Halo */
-                    .vehicle-container {
+                    .maplibregl-marker {
+                        z-index: 99999 !important;
+                    }
+                    .vehicle-marker-wrapper {
                         width: 52px;
                         height: 52px;
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        position: relative;
-                        pointer-events: none;
-                        z-index: 9999;
-                    }
-                    .vehicle-disc {
-                        width: 40px;
-                        height: 40px;
-                        background: #FFFFFF;
-                        border-radius: 50%;
-                        box-shadow: 0 4px 14px rgba(0,0,0,0.5);
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        border: 2.5px solid #FFFFFF;
-                        position: relative;
-                    }
-                    .vehicle-arrow-svg {
-                        width: 22px;
-                        height: 22px;
-                        display: block;
+                        filter: drop-shadow(0px 6px 14px rgba(0, 0, 0, 0.65));
+                        transform-origin: center center;
                     }
                 </style>
             </head>
@@ -156,8 +141,8 @@ class SiroNavView @JvmOverloads constructor(
                         container: 'map',
                         style: '$styleUrl',
                         center: [35.9106, 31.9539],
-                        zoom: 17.8,
-                        pitch: 58.0,
+                        zoom: 18.2,
+                        pitch: 50.0,
                         bearing: 0,
                         attributionControl: false
                     });
@@ -180,19 +165,17 @@ class SiroNavView @JvmOverloads constructor(
                             img.src = 'https://map.intaleqapp.com/assets/map_icons/' + icon + '.svg';
                         });
 
-                        // Create Sharp SVG Navigation Arrow
                         vehicleEl = document.createElement('div');
-                        vehicleEl.className = 'vehicle-container';
-                        
-                        var disc = document.createElement('div');
-                        disc.className = 'vehicle-disc';
-                        disc.innerHTML = '<svg class="vehicle-arrow-svg" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 21L12 17L21 21L12 2Z" fill="#0071E3" stroke="#005bb5" stroke-width="1.5" stroke-linejoin="round"/></svg>';
-                        
-                        vehicleEl.appendChild(disc);
+                        vehicleEl.className = 'vehicle-marker-wrapper';
+                        vehicleEl.innerHTML = '<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="24" cy="24" r="21" fill="white" stroke="#0071E3" stroke-width="3"/><path d="M24 7L13 37L24 30L35 37L24 7Z" fill="#0071E3" stroke="#005bb5" stroke-width="2" stroke-linejoin="round"/></svg>';
 
-                        vehicleMarker = new maplibregl.Marker({ element: vehicleEl, rotationAlignment: 'map' })
-                            .setLngLat([35.9106, 31.9539])
-                            .addTo(map);
+                        vehicleMarker = new maplibregl.Marker({ 
+                            element: vehicleEl, 
+                            rotationAlignment: 'map', 
+                            pitchAlignment: 'map' 
+                        })
+                        .setLngLat([35.9106, 31.9539])
+                        .addTo(map);
 
                         map.addSource('nav-route-source', {
                             type: 'geojson',
@@ -236,19 +219,45 @@ class SiroNavView @JvmOverloads constructor(
                         } catch(e) {}
                     }
 
-                    function updateVehiclePosition(lat, lng, heading) {
-                        if (vehicleMarker) {
+                    function calculateSmartZoom(speed) {
+                        // Intelligent Dynamic Zoom according to vehicle speed:
+                        // Low speed (0-25 km/h, intersections/turns): close-up zoom 18.8 - 19.2 for sharp visibility
+                        // Medium speed (25-60 km/h, city corridors): optimal zoom 17.8 - 18.2
+                        // High speed (> 60 km/h, highways): zoomed out 16.5 - 17.0 for broader situational awareness
+                        if (speed <= 0) return 18.8;
+                        if (speed < 25) return 19.0 - (speed / 25.0) * 0.8;
+                        if (speed < 60) return 18.2 - ((speed - 25.0) / 35.0) * 0.7;
+                        if (speed < 100) return 17.5 - ((speed - 60.0) / 40.0) * 0.8;
+                        return 16.5;
+                    }
+
+                    function updateVehiclePosition(lat, lng, heading, speed) {
+                        if (!vehicleMarker) {
+                            vehicleEl = document.createElement('div');
+                            vehicleEl.className = 'vehicle-container';
+                            var disc = document.createElement('div');
+                            disc.className = 'vehicle-disc';
+                            disc.innerHTML = '<svg class="vehicle-arrow-svg" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 21L12 17L21 21L12 2Z" fill="#0071E3" stroke="#004b99" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+                            vehicleEl.appendChild(disc);
+                            vehicleMarker = new maplibregl.Marker({ element: vehicleEl, rotationAlignment: 'map', pitchAlignment: 'map' })
+                                .setLngLat([lng, lat])
+                                .addTo(map);
+                        } else {
                             vehicleMarker.setLngLat([lng, lat]);
-                            if (heading >= 0) {
-                                vehicleMarker.setRotation(heading);
-                            }
                         }
+
+                        if (heading >= 0 && vehicleMarker) {
+                            vehicleMarker.setRotation(heading);
+                        }
+
                         var targetBearing = heading >= 0 ? heading : map.getBearing();
+                        var targetZoom = calculateSmartZoom(typeof speed === 'number' ? speed : 0);
+
                         map.easeTo({
                             center: [lng, lat],
                             bearing: targetBearing,
-                            pitch: 58.0,
-                            zoom: 17.8,
+                            pitch: 50.0,
+                            zoom: targetZoom,
                             duration: 350
                         });
                     }
@@ -514,8 +523,8 @@ class SiroNavView @JvmOverloads constructor(
         evaluateJs("setRoute('${coords.toString().replace("'", "\\'")}');")
     }
 
-    fun updateVehicle(lat: Double, lng: Double, heading: Double) {
-        evaluateJs("updateVehiclePosition($lat, $lng, $heading);")
+    fun updateVehicle(lat: Double, lng: Double, heading: Double, speedKmh: Double = 0.0) {
+        evaluateJs("updateVehiclePosition($lat, $lng, $heading, $speedKmh);")
     }
 
     override fun onInstructionChanged(instruction: NavEvent.Instruction) {
@@ -566,11 +575,12 @@ class SiroNavView @JvmOverloads constructor(
                 if (km >= 1.0) String.format("%.1f km remaining", km) else "${progress.remainingDistanceMeters.toInt()} m remaining"
             }
 
-            // Real Heading & Position Update
+            // Real Heading & Dynamic Speed-based Zoom Position Update
             updateVehicle(
                 progress.snappedPosition.latitude,
                 progress.snappedPosition.longitude,
-                progress.snappedPosition.heading
+                progress.snappedPosition.heading,
+                progress.currentSpeedKmh
             )
 
             // Dynamic Developer Tariff Metrics: [انطلاق الرحلة | المسافة | الأجرة]
