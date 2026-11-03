@@ -34,6 +34,10 @@ class MainActivity : AppCompatActivity() {
         navView = findViewById(R.id.siroNavView)
         btnStartNav = findViewById(R.id.btnStartNav)
 
+        // 1. Configure Developer Options (Language, Fare Visibility, Custom Currency)
+        navView.locale = "ar"              // Options: "ar" or "en"
+        navView.showFareMetrics = true      // Developer toggle for fare subpanel
+
         val config = NavConfig(
             apiKey = "siro_live_commercial_eval_key",
             baseUrl = "https://map-saas.intaleqapp.com/api"
@@ -54,33 +58,35 @@ class MainActivity : AppCompatActivity() {
         btnStartNav.isEnabled = false
         btnStartNav.text = "جاري حساب المسار الملتزم بالشبكة الطرقية..."
 
-        val origin = NavPoint(latitude = 31.9539, longitude = 35.9106)      // 3rd Circle Amman
-        val destination = NavPoint(latitude = 31.9650, longitude = 35.8900) // 5th Circle / Zahran
+        // Amman route: 3rd Circle to Zahran 5th Circle
+        val origin = NavPoint(latitude = 31.9539, longitude = 35.9106)
+        val destination = NavPoint(latitude = 31.9650, longitude = 35.8900)
 
         lifecycleScope.launch {
             try {
                 val routingClient = RoutingClient(navController.config)
-                val liveRoute = routingClient.getRoute(origin, destination, "ar")
+                val liveRoute = routingClient.getRoute(origin, destination, navView.locale)
 
                 controlPanel.visibility = View.GONE
                 navView.visibility = View.VISIBLE
                 btnStartNav.isEnabled = true
                 btnStartNav.text = "بدء الرحلة التجريبية (Simulated Nav)"
 
-                // Tariff configuration with developer custom conditions
+                // Developer custom tariff rules (Dynamic currency & custom perKm / perMinute)
                 val fare = NavFareConfig(
-                    baseFare = 0.50,
-                    perKilometer = 0.35,
-                    perWaitingMinute = 0.05,
-                    currency = "JOD"
+                    baseFare = 0.50,            // Base starting price
+                    perKilometer = 0.35,        // Price per KM
+                    perWaitingMinute = 0.05,    // Price per minute waiting
+                    currency = "JOD",           // Can be JOD, SAR, USD, AED, etc.
+                    waitingSpeedKmh = 5.0
                 )
 
                 navController.startNavigation(route = liveRoute, fare = fare)
                 navView.setRoute(liveRoute)
 
-                // Drive smoothly following true road curvature & headings
+                // Smooth simulation driving with heading
                 val simulator = NavRouteSimulator(liveRoute, speedKmh = 45.0)
-                val fixes = simulator.generateSimulatedFixes(stepIntervalSeconds = 0.4)
+                val fixes = simulator.generateSimulatedFixes(stepIntervalSeconds = 0.35)
 
                 simJob = launch {
                     for (fix in fixes) {
@@ -95,13 +101,13 @@ class MainActivity : AppCompatActivity() {
                             time = System.currentTimeMillis()
                         }
                         navController.updateLocation(loc)
-                        delay(400)
+                        delay(350)
                     }
                 }
             } catch (e: Exception) {
                 btnStartNav.isEnabled = true
                 btnStartNav.text = "إعادة المحاولة"
-                Toast.makeText(this@MainActivity, "خطأ في حساب المسار: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "خطأ: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }

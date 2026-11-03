@@ -7,12 +7,13 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.Gravity
+import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.siro.nav.SiroNavController
@@ -22,11 +23,16 @@ import com.siro.nav.engine.NavEvent
 import com.siro.nav.models.NavRoute
 import com.siro.nav.models.SpeedCamera
 import org.json.JSONArray
+import java.util.Calendar
 
 /**
- * Native Turn-by-Turn View on Siro Maps.
- * Includes Limestone style, RTL Arabic text engine, runtime badge icons,
- * 3D follow camera, vehicle rotation, and live tariff metrics HUD.
+ * Premium Turn-by-Turn View on Siro Maps.
+ * Matches Siro Limestone design:
+ * - Real 3D Chase Camera tracking GPS Bearing/Heading
+ * - Native Directional Chevron Arrow rotating in real-time with GPS Heading
+ * - Floating Elevation Speedometer Badge positioned ergonomically above bottom bar
+ * - Multi-language support (Arabic / English)
+ * - Developer-controlled optional Fare & Distance panel with custom currency
  */
 class SiroNavView @JvmOverloads constructor(
     context: Context,
@@ -37,25 +43,37 @@ class SiroNavView @JvmOverloads constructor(
     private val webView = WebView(context)
     private var isMapLoaded = false
 
-    private val topInstructionCard = LinearLayout(context)
-    private val instructionLabel = TextView(context)
-    private val distanceLabel = TextView(context)
-    private val speedBadge = FrameLayout(context)
-    private val speedLabel = TextView(context)
-    private val bottomStatusBar = LinearLayout(context)
-    private val remainingLabel = TextView(context)
-    private val fareMetricsLabel = TextView(context)
-    private val exitButton = Button(context)
-
-    var onExitListener: (() -> Unit)? = null
+    // Options for developers
+    var locale: String = "ar" // "ar" or "en"
+    var showFareMetrics: Boolean = true
     var styleUrl: String = "https://map.intaleqapp.com/style.json"
+    var onExitListener: (() -> Unit)? = null
+
+    // UI Elements
+    private val topInstructionCard = LinearLayout(context)
+    private val maneuverIcon = TextView(context)
+    private val distanceLabel = TextView(context)
+    private val instructionLabel = TextView(context)
+    private val streetLabel = TextView(context)
+
+    private val speedBadgeContainer = LinearLayout(context)
+    private val speedLabel = TextView(context)
+    private val speedUnitLabel = TextView(context)
+
+    private val bottomCard = LinearLayout(context)
+    private val etaLabel = TextView(context)
+    private val etaClockLabel = TextView(context)
+    private val remainingDistLabel = TextView(context)
+    private val fareMetricsContainer = LinearLayout(context)
+    private val fareMetricsLabel = TextView(context)
+    private val exitButton = FrameLayout(context)
 
     private var activeController: SiroNavController? = null
 
     init {
-        setBackgroundColor(Color.parseColor("#101014"))
+        setBackgroundColor(Color.parseColor("#0F172A"))
         setupMapWebView()
-        setupHUD(context)
+        setupPremiumHUD(context)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -73,7 +91,7 @@ class SiroNavView @JvmOverloads constructor(
         settings.useWideViewPort = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
-        webView.setBackgroundColor(Color.parseColor("#101014"))
+        webView.setBackgroundColor(Color.parseColor("#0F172A"))
         webView.webChromeClient = WebChromeClient()
         webView.addJavascriptInterface(NavMapBridge(), "siroNavBridge")
 
@@ -83,59 +101,71 @@ class SiroNavView @JvmOverloads constructor(
     private fun loadMapHtml() {
         val html = """
             <!DOCTYPE html>
-            <html dir="rtl">
+            <html dir="${if (locale == "ar") "rtl" else "ltr"}">
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-                <title>Siro Limestone Navigation</title>
+                <title>Siro Maps Navigation</title>
                 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
                 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
                 <style>
-                    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #101014; }
-                    .vehicle-marker-wrapper {
-                        width: 52px;
-                        height: 52px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                    }
-                    .vehicle-disc {
-                        width: 44px;
-                        height: 44px;
-                        background: #FFFFFF;
-                        border-radius: 50%;
-                        box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+                    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0F172A; }
+                    
+                    /* Modern Vehicle Disc with Precision Directional Chevron */
+                    .vehicle-container {
+                        width: 48px;
+                        height: 48px;
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         position: relative;
+                        pointer-events: none;
+                        transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1);
+                    }
+                    .vehicle-halo {
+                        position: absolute;
+                        width: 44px;
+                        height: 44px;
+                        border-radius: 50%;
+                        background: rgba(0, 113, 227, 0.18);
+                    }
+                    .vehicle-disc {
+                        position: absolute;
+                        width: 34px;
+                        height: 34px;
+                        background: #FFFFFF;
+                        border-radius: 50%;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        border: 2px solid #FFFFFF;
                     }
                     .vehicle-chevron {
                         width: 0;
                         height: 0;
-                        border-left: 9px solid transparent;
-                        border-right: 9px solid transparent;
-                        border-bottom: 22px solid #0071E3;
+                        border-left: 7.5px solid transparent;
+                        border-right: 7.5px solid transparent;
+                        border-bottom: 18px solid #0071E3;
                         position: relative;
-                        top: -3px;
+                        top: -2px;
                     }
                     .vehicle-chevron::after {
                         content: '';
                         position: absolute;
-                        left: -9px;
-                        top: 14px;
+                        left: -7.5px;
+                        top: 12px;
                         width: 0;
                         height: 0;
-                        border-left: 9px solid transparent;
-                        border-right: 9px solid transparent;
-                        border-bottom: 8px solid #FFFFFF;
+                        border-left: 7.5px solid transparent;
+                        border-right: 7.5px solid transparent;
+                        border-bottom: 6px solid #FFFFFF;
                     }
                 </style>
             </head>
             <body>
                 <div id="map"></div>
                 <script>
-                    // Mandatory RTL Text Plugin for correct Arabic shaping and ligatures
                     if (maplibregl.getRTLTextPluginStatus() === 'unavailable') {
                         maplibregl.setRTLTextPlugin(
                             'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js',
@@ -148,8 +178,8 @@ class SiroNavView @JvmOverloads constructor(
                         container: 'map',
                         style: '$styleUrl',
                         center: [35.9106, 31.9539],
-                        zoom: 17.5,
-                        pitch: 55.0,
+                        zoom: 17.8,
+                        pitch: 58.0,
                         bearing: 0,
                         attributionControl: false
                     });
@@ -158,7 +188,6 @@ class SiroNavView @JvmOverloads constructor(
                     var vehicleEl = null;
 
                     map.on('load', function() {
-                        // Load SVG POI badges into map style
                         var icons = [
                             'badge-cafe', 'badge-restaurant', 'badge-fuel', 'badge-hospital',
                             'badge-pharmacy', 'badge-bank', 'badge-supermarket', 'arrow'
@@ -173,21 +202,25 @@ class SiroNavView @JvmOverloads constructor(
                             img.src = 'https://map.intaleqapp.com/assets/map_icons/' + icon + '.svg';
                         });
 
-                        // Create Vehicle Chevron Marker matching Flutter NavVehicleIcon
+                        // Create Vehicle DOM
                         vehicleEl = document.createElement('div');
-                        vehicleEl.className = 'vehicle-marker-wrapper';
+                        vehicleEl.className = 'vehicle-container';
+                        
+                        var halo = document.createElement('div');
+                        halo.className = 'vehicle-halo';
                         var disc = document.createElement('div');
                         disc.className = 'vehicle-disc';
                         var chev = document.createElement('div');
                         chev.className = 'vehicle-chevron';
+                        
                         disc.appendChild(chev);
+                        vehicleEl.appendChild(halo);
                         vehicleEl.appendChild(disc);
 
                         vehicleMarker = new maplibregl.Marker({ element: vehicleEl, rotationAlignment: 'map' })
                             .setLngLat([35.9106, 31.9539])
                             .addTo(map);
 
-                        // Route Source & Layers
                         map.addSource('nav-route-source', {
                             type: 'geojson',
                             data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } }
@@ -198,7 +231,7 @@ class SiroNavView @JvmOverloads constructor(
                             type: 'line',
                             source: 'nav-route-source',
                             layout: { 'line-join': 'round', 'line-cap': 'round' },
-                            paint: { 'line-color': '#FFFFFF', 'line-width': 10 }
+                            paint: { 'line-color': '#FFFFFF', 'line-width': 9.5 }
                         });
 
                         map.addLayer({
@@ -206,7 +239,7 @@ class SiroNavView @JvmOverloads constructor(
                             type: 'line',
                             source: 'nav-route-source',
                             layout: { 'line-join': 'round', 'line-cap': 'round' },
-                            paint: { 'line-color': '#0071E3', 'line-width': 6.5 }
+                            paint: { 'line-color': '#0071E3', 'line-width': 6.0 }
                         });
 
                         if (window.siroNavBridge) {
@@ -241,9 +274,9 @@ class SiroNavView @JvmOverloads constructor(
                         map.easeTo({
                             center: [lng, lat],
                             bearing: targetBearing,
-                            pitch: 55,
-                            zoom: 17.5,
-                            duration: 500
+                            pitch: 58.0,
+                            zoom: 17.8,
+                            duration: 400
                         });
                     }
                 </script>
@@ -264,125 +297,232 @@ class SiroNavView @JvmOverloads constructor(
         }
     }
 
-    private fun setupHUD(context: Context) {
+    private fun setupPremiumHUD(context: Context) {
         val dp = context.resources.displayMetrics.density
 
-        // 1. Top Instruction Card
+        // ── 1. Top Instruction Banner (Slate-900 with Cyan accents) ─────────
         topInstructionCard.apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding((16 * dp).toInt(), (14 * dp).toInt(), (16 * dp).toInt(), (14 * dp).toInt())
             background = GradientDrawable().apply {
-                setColor(Color.argb(240, 25, 25, 25))
-                cornerRadius = 16 * dp
+                setColor(Color.argb(245, 15, 23, 42)) // Slate 900
+                cornerRadius = 20 * dp
+                setStroke((1 * dp).toInt(), Color.argb(100, 51, 65, 85))
             }
             layoutParams = LayoutParams(
                 LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins((16 * dp).toInt(), (24 * dp).toInt(), (16 * dp).toInt(), 0)
+                setMargins((16 * dp).toInt(), (32 * dp).toInt(), (16 * dp).toInt(), 0)
                 gravity = Gravity.TOP
             }
         }
 
-        instructionLabel.apply {
+        // Maneuver Icon Box
+        val iconBox = FrameLayout(context).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#0284C7")) // Sky blue 600
+                cornerRadius = 14 * dp
+            }
+            layoutParams = LinearLayout.LayoutParams((46 * dp).toInt(), (46 * dp).toInt()).apply {
+                setMargins(0, 0, (14 * dp).toInt(), 0)
+            }
+        }
+        maneuverIcon.apply {
+            text = "↱"
             setTextColor(Color.WHITE)
-            textSize = 18f
-            typeface = Typeface.DEFAULT_BOLD
-            maxLines = 2
+            textSize = 24f
+            gravity = Gravity.CENTER
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+        }
+        iconBox.addView(maneuverIcon)
+        topInstructionCard.addView(iconBox)
+
+        val textDetailsLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
         }
 
         distanceLabel.apply {
-            setTextColor(Color.parseColor("#34D399"))
-            textSize = 15f
+            setTextColor(Color.parseColor("#38BDF8")) // Sky blue accent
+            textSize = 19f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, (6 * dp).toInt(), 0, 0)
         }
 
-        topInstructionCard.addView(instructionLabel)
-        topInstructionCard.addView(distanceLabel)
+        instructionLabel.apply {
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 2
+            setPadding(0, (2 * dp).toInt(), 0, 0)
+        }
+
+        streetLabel.apply {
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 13f
+            maxLines = 1
+            visibility = GONE
+        }
+
+        textDetailsLayout.addView(distanceLabel)
+        textDetailsLayout.addView(instructionLabel)
+        textDetailsLayout.addView(streetLabel)
+        topInstructionCard.addView(textDetailsLayout)
         addView(topInstructionCard)
 
-        // 2. Speed Badge
-        speedBadge.apply {
+        // ── 2. Speedometer Badge (Elevated & Positioned above bottom bar) ───
+        speedBadgeContainer.apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 setColor(Color.WHITE)
-                setStroke((3 * dp).toInt(), Color.RED)
-                cornerRadius = 24 * dp
+                cornerRadius = 28 * dp
+                setStroke((3.5 * dp).toInt(), Color.parseColor("#EF4444"))
             }
+            elevation = 12 * dp
             layoutParams = LayoutParams(
-                (48 * dp).toInt(),
-                (48 * dp).toInt()
+                (56 * dp).toInt(),
+                (56 * dp).toInt()
             ).apply {
-                setMargins((16 * dp).toInt(), 0, 0, (96 * dp).toInt())
+                // Highly elevated margin to ensure zero overlap with bottom card
+                setMargins((18 * dp).toInt(), 0, 0, (148 * dp).toInt())
                 gravity = Gravity.BOTTOM or Gravity.START
             }
         }
 
         speedLabel.apply {
-            setTextColor(Color.BLACK)
-            textSize = 16f
+            text = "0"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 20f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         }
-        speedBadge.addView(speedLabel)
-        addView(speedBadge)
 
-        // 3. Bottom Status Bar with Fare & Distance
-        bottomStatusBar.apply {
+        speedUnitLabel.apply {
+            text = if (locale == "ar") "كم/س" else "km/h"
+            setTextColor(Color.parseColor("#64748B"))
+            textSize = 9f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+        }
+
+        speedBadgeContainer.addView(speedLabel)
+        speedBadgeContainer.addView(speedUnitLabel)
+        addView(speedBadgeContainer)
+
+        // ── 3. Bottom Trip Status & Metrics Card ─────────────────────────────
+        bottomCard.apply {
             orientation = LinearLayout.VERTICAL
-            setPadding((16 * dp).toInt(), (8 * dp).toInt(), (16 * dp).toInt(), (8 * dp).toInt())
+            setPadding((18 * dp).toInt(), (14 * dp).toInt(), (18 * dp).toInt(), (14 * dp).toInt())
             background = GradientDrawable().apply {
-                setColor(Color.argb(240, 30, 30, 30))
-                cornerRadius = 20 * dp
+                setColor(Color.argb(248, 15, 23, 42)) // Slate 900
+                cornerRadius = 24 * dp
+                setStroke((1 * dp).toInt(), Color.argb(100, 51, 65, 85))
             }
+            elevation = 16 * dp
             layoutParams = LayoutParams(
                 LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins((12 * dp).toInt(), 0, (12 * dp).toInt(), (16 * dp).toInt())
+                setMargins((14 * dp).toInt(), 0, (14 * dp).toInt(), (18 * dp).toInt())
                 gravity = Gravity.BOTTOM
             }
         }
 
-        val row1 = LinearLayout(context).apply {
+        val topRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (44 * dp).toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
-        remainingLabel.apply {
-            setTextColor(Color.WHITE)
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
+        // Stop / Exit circular button
+        exitButton.apply {
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#334155"))
+                shape = GradientDrawable.OVAL
+                setStroke((1 * dp).toInt(), Color.parseColor("#475569"))
+            }
+            val closeIcon = TextView(context).apply {
+                text = "✕"
+                setTextColor(Color.parseColor("#EF4444"))
+                textSize = 18f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            }
+            addView(closeIcon)
+            setOnClickListener { onExitListener?.invoke() }
+            layoutParams = LinearLayout.LayoutParams((44 * dp).toInt(), (44 * dp).toInt()).apply {
+                setMargins(0, 0, (14 * dp).toInt(), 0)
+            }
+        }
+        topRow.addView(exitButton)
+
+        val etaColumn = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
         }
 
-        exitButton.apply {
-            text = "خروج"
-            setTextColor(Color.WHITE)
+        val etaTimeRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        etaLabel.apply {
+            setTextColor(Color.parseColor("#10B981")) // Emerald Green
+            textSize = 21f
+            typeface = Typeface.DEFAULT_BOLD
+        }
+
+        etaClockLabel.apply {
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 14f
+            setPadding((8 * dp).toInt(), 0, 0, 0)
+        }
+
+        etaTimeRow.addView(etaLabel)
+        etaTimeRow.addView(etaClockLabel)
+
+        remainingDistLabel.apply {
+            setTextColor(Color.argb(200, 255, 255, 255))
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, (2 * dp).toInt(), 0, 0)
+        }
+
+        etaColumn.addView(etaTimeRow)
+        etaColumn.addView(remainingDistLabel)
+        topRow.addView(etaColumn)
+        bottomCard.addView(topRow)
+
+        // ── 4. Developer Configured Fare & Distance Sub-Panel ────────────────
+        fareMetricsContainer.apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), (8 * dp).toInt())
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#EF4444"))
+                setColor(Color.argb(120, 30, 41, 59))
                 cornerRadius = 12 * dp
             }
-            setOnClickListener { onExitListener?.invoke() }
-            layoutParams = LinearLayout.LayoutParams((72 * dp).toInt(), (36 * dp).toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, (12 * dp).toInt(), 0, 0)
+            }
+            visibility = if (showFareMetrics) VISIBLE else GONE
         }
-
-        row1.addView(remainingLabel)
-        row1.addView(exitButton)
 
         fareMetricsLabel.apply {
-            setTextColor(Color.parseColor("#FBBF24"))
-            textSize = 13f
+            setTextColor(Color.parseColor("#FBBF24")) // Amber Gold
+            textSize = 13.5f
             typeface = Typeface.DEFAULT_BOLD
-            visibility = GONE
-            setPadding(0, 0, 0, (4 * dp).toInt())
         }
+        fareMetricsContainer.addView(fareMetricsLabel)
+        bottomCard.addView(fareMetricsContainer)
 
-        bottomStatusBar.addView(row1)
-        bottomStatusBar.addView(fareMetricsLabel)
-        addView(bottomStatusBar)
+        addView(bottomCard)
     }
 
     fun bindController(controller: SiroNavController) {
@@ -411,27 +551,69 @@ class SiroNavView @JvmOverloads constructor(
         post {
             instructionLabel.text = instruction.instruction
             distanceLabel.text = formatDistance(instruction.distanceMeters)
+            if (instruction.streetName.isNotEmpty()) {
+                streetLabel.visibility = VISIBLE
+                streetLabel.text = instruction.streetName
+            } else {
+                streetLabel.visibility = GONE
+            }
+            maneuverIcon.text = when (instruction.maneuverType) {
+                1 -> "↱"
+                -1 -> "↰"
+                -98 -> "⮌"
+                else -> "↑"
+            }
         }
     }
 
     override fun onProgressUpdated(progress: NavEvent.Progress) {
         post {
+            // Speed
             speedLabel.text = progress.currentSpeedKmh.toInt().toString()
-            val km = String.format("%.1f كم", progress.remainingDistanceMeters / 1000.0)
-            val mins = "${progress.remainingDurationSeconds / 60} دقيقة"
-            remainingLabel.text = "$km • $mins"
 
-            // Update Vehicle Arrow with Heading
+            // ETA & Clock
+            val mins = (progress.remainingDurationSeconds / 60).coerceAtLeast(1)
+            etaLabel.text = if (locale == "ar") "$mins دقيقة" else "$mins min"
+
+            val cal = Calendar.getInstance().apply {
+                add(Calendar.SECOND, progress.remainingDurationSeconds)
+            }
+            val hour = cal.get(Calendar.HOUR).let { if (it == 0) 12 else it }
+            val minuteStr = String.format("%02d", cal.get(Calendar.MINUTE))
+            val ampm = if (cal.get(Calendar.AM_PM) == Calendar.PM) {
+                if (locale == "ar") "م" else "PM"
+            } else {
+                if (locale == "ar") "ص" else "AM"
+            }
+            etaClockLabel.text = "($hour:$minuteStr $ampm)"
+
+            // Remaining Distance
+            val km = progress.remainingDistanceMeters / 1000.0
+            remainingDistLabel.text = if (locale == "ar") {
+                if (km >= 1.0) String.format("%.1f كم متبقية", km) else "${progress.remainingDistanceMeters.toInt()} م متبقية"
+            } else {
+                if (km >= 1.0) String.format("%.1f km remaining", km) else "${progress.remainingDistanceMeters.toInt()} m remaining"
+            }
+
+            // Real Heading & Position Update
             updateVehicle(
                 progress.snappedPosition.latitude,
                 progress.snappedPosition.longitude,
                 progress.snappedPosition.heading
             )
 
-            // Update Fare Metrics if meter is active
-            activeController?.lastTripTotals?.let { totals ->
-                fareMetricsLabel.visibility = VISIBLE
-                fareMetricsLabel.text = "الأجرة: ${totals.fareLabel}  |  المقطوع: ${String.format("%.2f", totals.distanceKm)} كم  |  انتظار: ${String.format("%.1f", totals.waitingMinutes)} د"
+            // Dynamic Developer Tariff Metrics
+            if (showFareMetrics) {
+                activeController?.lastTripTotals?.let { totals ->
+                    fareMetricsContainer.visibility = VISIBLE
+                    fareMetricsLabel.text = if (locale == "ar") {
+                        "الأجرة: ${totals.fareLabel}  •  المسافة: ${String.format("%.2f", totals.distanceKm)} كم  •  انتظار: ${String.format("%.1f", totals.waitingMinutes)} د"
+                    } else {
+                        "Fare: ${totals.fareLabel}  •  Distance: ${String.format("%.2f", totals.distanceKm)} km  •  Waiting: ${String.format("%.1f", totals.waitingMinutes)} m"
+                    }
+                }
+            } else {
+                fareMetricsContainer.visibility = GONE
             }
         }
     }
@@ -442,10 +624,10 @@ class SiroNavView @JvmOverloads constructor(
     override fun onError(error: String) {}
 
     private fun formatDistance(meters: Double): String {
-        return if (meters >= 1000) {
-            String.format("بعد %.1f كم", meters / 1000.0)
+        return if (locale == "ar") {
+            if (meters >= 1000) String.format("بعد %.1f كم", meters / 1000.0) else "بعد ${meters.toInt()} م"
         } else {
-            "بعد ${meters.toInt()} م"
+            if (meters >= 1000) String.format("In %.1f km", meters / 1000.0) else "In ${meters.toInt()} m"
         }
     }
 
