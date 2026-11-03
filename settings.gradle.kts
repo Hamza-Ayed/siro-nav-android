@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "siro-nav-android"
 include(":siro-nav")
+include(":sample-app")
